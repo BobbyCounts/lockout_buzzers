@@ -39,17 +39,10 @@ static void rtc_isr_handler(nrfx_rtc_int_type_t int_type)
 	}
 }
 
-static void on_egu_send_arm(struct k_work *work)
-{
-	buzzer_set_arm_flag();
-}
-K_WORK_DEFINE(egu_send_arm, on_egu_send_arm);
-
-
 static void egu_isr_handler(uint8_t event_idx, void * p_context)
 {
-	// TODO: Set to function call only instead of work queue
-	k_work_submit(&egu_send_arm);
+	buzzer_set_arm_flag();
+	nrfx_egu_int_disable(&egu_instance, 0x1);
 }
 
 static void unused_timer_isr_handler(nrf_timer_event_t event_type, void *ctx)
@@ -181,7 +174,6 @@ int config_egu_trigger_on_rtc_and_timer_match(void)
 	}
 	IRQ_CONNECT(NRFX_IRQ_NUMBER_GET(NRF_EGU_INST_GET(0)), 0,
             NRFX_EGU_INST_HANDLER_GET(0), NULL, 0);
-	nrfx_egu_int_enable(&egu_instance, 0x1);
 
 	if (nrfx_gppi_channel_alloc(&ppi_chan_on_rtc_match) != NRFX_SUCCESS) {
 		printk("Failed allocating for RTC match\n");
@@ -307,6 +299,8 @@ void controller_time_trigger_set(uint64_t timestamp_us)
 	}
 
 	nrfx_timer_compare(&app_timer_instance, 0, timer_val, false);
+
+	nrfx_egu_int_enable(&egu_instance, 0x1);
 }
 
 uint32_t controller_time_trigger_event_addr_get(void)
