@@ -8,6 +8,7 @@
 #include "buzzer_gatt.h"
 
 #define BUZZER_LOCKOUT 1000
+#define BUZZER_LED_FLASH_DELAY_MS 100
 
 // Data structure definitions
 // Buzzer state struct
@@ -25,11 +26,17 @@ struct buzzer_sync {
 };
 
 // Consts
-static const struct gpio_dt_spec input_button = GPIO_DT_SPEC_GET(DT_NODELABEL(button0), gpios);
+static const struct gpio_dt_spec input_button = GPIO_DT_SPEC_GET(DT_NODELABEL(push_button), gpios);
+static const struct gpio_dt_spec led_drive = GPIO_DT_SPEC_GET(DT_NODELABEL(led_drive), gpios);
+
+// Function Declarations
+void buzzer_led_init(void);
+void buzzer_led_on(void);
+void buzzer_led_off(void);
+void buzzer_led_start_flash(void);
 
 // Callback data for gpio
 static struct gpio_callback pin_cb_data;
-
 
 // Device state
 static struct buzzer_params buzzer_state;
@@ -78,7 +85,7 @@ static void pin_isr_buzzer(const struct device *dev, struct gpio_callback *cb, u
 
 static void gpio_input_config(void)
 {
-	gpio_pin_configure_dt(&input_button, GPIO_INPUT);
+	gpio_pin_configure_dt(&input_button, GPIO_INPUT | GPIO_PULL_UP);
 	gpio_pin_interrupt_configure_dt(&input_button, GPIO_INT_EDGE_TO_ACTIVE);
 	gpio_init_callback(&pin_cb_data, pin_isr_buzzer, BIT(input_button.pin));
 	gpio_add_callback(input_button.port, &pin_cb_data);
@@ -87,6 +94,7 @@ static void gpio_input_config(void)
 void buzzer_device_init(void)
 {
     gpio_input_config();
+	buzzer_led_init();
 }
 
 void buzzer_device_reset(void)
@@ -159,8 +167,36 @@ ssize_t buzzer_arm_recieved(struct bt_conn *conn,
     }else{
         atomic_clear_bit(&buzzer_state.armed, 0);
         buzzer_state.buzzer_pushed_timestamp = 0;
+		buzzer_led_off();
         uart_printf("Buzzer Disarmed\n");
     }
+
+    atomic_clear_bit(&buzzer_state.lock, 0);
+    return len;
+}
+
+ssize_t buzzer_light_recieved(struct bt_conn *conn,
+    const struct bt_gatt_attr *attr,
+    const void *buf, uint16_t len,
+    uint16_t offset, uint8_t flags)
+{
+    if (len != sizeof(buzzer_state.lights) || offset != 0) {
+        return BT_GATT_ERR(BT_ATT_ERR_INVALID_ATTRIBUTE_LEN);
+    }
+
+    // Obtain a lock for the buzzer struct
+    if(atomic_test_and_set_bit(&buzzer_state.lock, 0)){
+    uart_printf("ERROR ARM: Already Locked\n");
+        return 0;
+    }
+    memcpy(&buzzer_state.lights, buf, sizeof(buzzer_state.lights));
+
+    // Set the ARM flag
+	if(buzzer_state.lights){
+		buzzer_led_on();
+	}else{
+		buzzer_led_off();
+	}
 
     atomic_clear_bit(&buzzer_state.lock, 0);
     return len;
@@ -170,5 +206,42 @@ ssize_t buzzer_arm_recieved(struct bt_conn *conn,
 void buzzer_set_arm_flag(void)
 {
     atomic_set_bit(&buzzer_state.armed, 0);
+	buzzer_led_start_flash();
     uart_printf("Buzzer ARMED\n");
+}
+
+///////////////////////////////////////////////////////
+// Buzzer LED Functions
+///////////////////////////////////////////////////////
+
+void buzzer_led_init(void)
+{
+    gpio_pin_configure_dt(&led_drive, GPIO_OUTPUT_ACTIVE);
+	buzzer_led_off();
+}
+
+void buzzer_led_on(void)
+{
+    gpio_pin_set_dt(&led_drive, 1);
+}
+
+void buzzer_led_off(void)
+{
+    gpio_pin_set_dt(&led_drive, 0);
+}
+
+static void on_buzzer_led_flash(struct k_work *work)
+{
+	// Make sure buzzer is still armed
+	if(atomic_test_bit(&buzzer_state.armed, 0)){
+		gpio_pin_toggle_dt(&led_drive);
+		k_work_schedule(k_work_delayable_from_work(work), K_MSEC(BUZZER_LED_FLASH_DELAY_MS));
+	}
+}
+K_WORK_DELAYABLE_DEFINE(buzzer_led_flash, on_buzzer_led_flash);
+
+void buzzer_led_start_flash(void)
+{
+    buzzer_led_on();
+    k_work_schedule(&buzzer_led_flash, K_MSEC(BUZZER_LED_FLASH_DELAY_MS));
 }

@@ -85,7 +85,7 @@ BT_GATT_SERVICE_DEFINE(buzzer_service,
 	BT_GATT_CCC(pressed_ccc_cfg_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
 	BT_GATT_CHARACTERISTIC(BT_UUID_BUZZER_LIGHT_CHAR,
 		BT_GATT_CHRC_WRITE,
-		BT_GATT_PERM_READ | BT_GATT_PERM_WRITE, buzzer_data_read, buzzer_arm_recieved, NULL));
+		BT_GATT_PERM_READ | BT_GATT_PERM_WRITE, buzzer_data_read, buzzer_light_recieved, NULL));
 
 static void adv_start(void)
 {

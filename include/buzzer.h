@@ -7,6 +7,10 @@ ssize_t buzzer_arm_recieved(struct bt_conn *conn,
     const struct bt_gatt_attr *attr,
     const void *buf, uint16_t len,
     uint16_t offset, uint8_t flags);
+ssize_t buzzer_light_recieved(struct bt_conn *conn,
+        const struct bt_gatt_attr *attr,
+        const void *buf, uint16_t len,
+        uint16_t offset, uint8_t flags);
 void buzzer_device_init(void);
 void pressed_ccc_cfg_changed(const struct bt_gatt_attr *attr,
 	uint16_t value);

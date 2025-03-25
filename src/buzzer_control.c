@@ -22,9 +22,11 @@ struct controller_params {
 struct device_params {
 	uint64_t last_buzz_time;
 	atomic_t last_buzz_time_valid;
+	uint8_t light_on;
 	const bt_addr_le_t *buzzer_addr;
 	uint16_t buzzer_char_handle;
  	uint16_t pressed_char_handle;
+	uint16_t light_char_handle;
  	uint16_t *timed_char_handle_ptr;
 };
 
@@ -45,7 +47,7 @@ const struct device_ids buzzer_ids[] = {
 	},
 	{
 		.buzzer_addr = {{0x6B, 0x65, 0xF0, 0x32, 0xB1, 0xD7}},
-		.buzzer_name = "Buzzer 2"
+		.buzzer_name = "Red"
 	},
 	{
 		.buzzer_addr = {{0}},
@@ -73,8 +75,6 @@ static void on_send_buzzer_arm(struct k_work *work)
 
 	controller_state.arm_timestamp = controller_time_us_get() + BUZZER_ARM_DELAY_US;
 	bt_conn_foreach(BT_CONN_TYPE_LE, send_arm_packet, &controller_state.arm_timestamp);
-
-
 }
 K_WORK_DEFINE(send_arm_signal, on_send_buzzer_arm);
 
@@ -163,6 +163,41 @@ static const char *get_buzzer_name(const bt_addr_t *addr)
 	return "Unknown";
 }
 
+static void send_light_packet(struct bt_conn *conn)
+{
+	int err;
+	struct bt_conn_info conn_info;
+
+	err = bt_conn_get_info(conn, &conn_info);
+	if (err) {
+		return;
+	}
+
+	uint8_t conn_index = bt_conn_index(conn);
+
+	if (conn_info.state != BT_CONN_STATE_CONNECTED) {
+		return;
+	}
+
+	if (device_state[conn_index].light_char_handle == 0) {
+		/* Service discovery not yet complete. */
+		return;
+	}
+
+	struct bt_gatt_write_params *write_ptr;
+	if(param_stack_get_write(&write_ptr)){
+		uart_printf("Error getting write buffer\n");
+		return;
+	}
+	device_state[conn_index].light_on = 1;
+	write_ptr->handle = device_state[conn_index].light_char_handle;
+	write_ptr->data = &device_state[conn_index].light_on;
+	write_ptr->length = sizeof(uint8_t);
+	write_ptr->func = write_cb;
+
+	bt_gatt_write(conn, write_ptr);
+}
+
 static void on_decide_winner(struct k_work *work)
 {
     // Get all recieved buzzer times and compare (find the lowest value)
@@ -186,10 +221,14 @@ static void on_decide_winner(struct k_work *work)
     controller_state.arm_timestamp = 0;
     atomic_clear_bit(&controller_state.recievced_first_buzz, 0);
 	bt_conn_foreach(BT_CONN_TYPE_LE, send_arm_packet, &controller_state.arm_timestamp);
+
+	// Turn on the light for the winner
+	struct bt_conn *conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, device_state[lowest_index].buzzer_addr);
+	send_light_packet(conn);
+	bt_conn_unref(conn);
     return;
 }
 K_WORK_DELAYABLE_DEFINE(decide_winner, on_decide_winner);
-
 
 // Callback for when a indication packet is recieved
 static uint8_t indicate_callback(struct bt_conn *conn, struct bt_gatt_subscribe_params *params, const void *data, uint16_t length){
@@ -280,6 +319,7 @@ static uint8_t on_discover_char(struct bt_conn *conn,
 		}
 		else if(bt_uuid_cmp(char_val->uuid, BT_UUID_BUZZER_LIGHT_CHAR) == 0){
 			// uart_printf("Found Light Characteristic\n");
+			device_state[conn_index].light_char_handle = bt_gatt_attr_value_handle(attr);
 		}
 		return BT_GATT_ITER_CONTINUE;
 	} else {
