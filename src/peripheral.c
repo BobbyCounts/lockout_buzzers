@@ -13,7 +13,7 @@
 #include <bluetooth/hci_vs_sdc.h>
 #include "buzzer_gatt.h"
 #include "conn_time_sync.h"
-#include "uart_polling.h"
+#include "uart_console.h"
 #include "buzzer.h"
 
 static const struct bt_data ad[] = {

@@ -2,7 +2,7 @@
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/drivers/gpio.h>
-#include "uart_polling.h"
+#include "uart_console.h"
 #include "conn_time_sync.h"
 #include "param_stack.h"
 #include "buzzer_gatt.h"
@@ -69,7 +69,7 @@ static void pin_isr_buzzer(const struct device *dev, struct gpio_callback *cb, u
 	// Check if buzzer is not armed
 	if(!atomic_test_bit(&buzzer_state.armed, 0)){
 		// Disable buzzer for BUZZER_LOCKOUT
-		uart_printf("Buzzer Locked\n");
+		uart_console_printf("Buzzer Locked\n");
 		gpio_pin_interrupt_configure_dt(&input_button, GPIO_INT_DISABLE);
 		k_work_schedule(&buzzer_reenable, K_MSEC(BUZZER_LOCKOUT));
 	}
@@ -77,7 +77,7 @@ static void pin_isr_buzzer(const struct device *dev, struct gpio_callback *cb, u
 	else if(!buzzer_state.buzzer_pushed_timestamp && atomic_test_bit(&buzzer_timing.offset_valid, 0)){
 		// Set the buzzer time
 		buzzer_state.buzzer_pushed_timestamp = controller_time_us_get() + buzzer_timing.offset_to_central;
-		uart_printf("Buzzed in @ %llu central\n", buzzer_state.buzzer_pushed_timestamp);
+		uart_console_printf("Buzzed in @ %llu central\n", buzzer_state.buzzer_pushed_timestamp);
 		k_work_submit(&indicate_buzzer_time);
 	}
 }
@@ -116,10 +116,10 @@ void pressed_ccc_cfg_changed(const struct bt_gatt_attr *attr,
 {
 	if(value == BT_GATT_CCC_INDICATE){
 		atomic_set_bit(&indicate_flag, 0);
-		uart_printf("Client Subscribed\n");
+		uart_console_printf("Client Subscribed\n");
 	}else{
 		atomic_clear_bit(&indicate_flag, 0);
-		uart_printf("Client Unsubscribed\n");
+		uart_console_printf("Client Unsubscribed\n");
 	}
 }
 
@@ -128,7 +128,7 @@ static void on_indicate_buzzer_time(struct k_work *work)
 {
 	// Check to see if we are still armed and indications are enabled
 	if(atomic_test_bit(&buzzer_state.armed, 0) && atomic_test_bit(&indicate_flag, 0)){
-		uart_printf("Indicate\n");
+		uart_console_printf("Indicate\n");
 		ind_params.uuid = BT_UUID_BUZZER_PRESSED_CHAR;
 		ind_params.func = NULL;
 		ind_params.destroy = NULL;
@@ -149,14 +149,14 @@ ssize_t buzzer_arm_recieved(struct bt_conn *conn,
 
     // Obtain a lock for the buzzer struct
     if(atomic_test_and_set_bit(&buzzer_state.lock, 0)){
-    uart_printf("ERROR ARM: Already Locked\n");
+    uart_console_printf("ERROR ARM: Already Locked\n");
         return 0;
     }
     memcpy(&buzzer_state.armed_timestamp, buf, sizeof(buzzer_state.armed_timestamp));
 
     // Set the ARM flag
     if(buzzer_state.armed_timestamp){
-        uart_printf("Arm buzzer @ %llu central\n", buzzer_state.armed_timestamp);
+        uart_console_printf("Arm buzzer @ %llu central\n", buzzer_state.armed_timestamp);
         // Set the buzzer time trigger
         timed_led_toggle_trigger_at(led_state, buzzer_state.armed_timestamp - buzzer_timing.offset_to_central);
 		if(led_state){
@@ -168,7 +168,7 @@ ssize_t buzzer_arm_recieved(struct bt_conn *conn,
         atomic_clear_bit(&buzzer_state.armed, 0);
         buzzer_state.buzzer_pushed_timestamp = 0;
 		buzzer_led_off();
-        uart_printf("Buzzer Disarmed\n");
+        uart_console_printf("Buzzer Disarmed\n");
     }
 
     atomic_clear_bit(&buzzer_state.lock, 0);
@@ -186,7 +186,7 @@ ssize_t buzzer_light_recieved(struct bt_conn *conn,
 
     // Obtain a lock for the buzzer struct
     if(atomic_test_and_set_bit(&buzzer_state.lock, 0)){
-    uart_printf("ERROR ARM: Already Locked\n");
+    uart_console_printf("ERROR ARM: Already Locked\n");
         return 0;
     }
     memcpy(&buzzer_state.lights, buf, sizeof(buzzer_state.lights));
@@ -207,7 +207,7 @@ void buzzer_set_arm_flag(void)
 {
     atomic_set_bit(&buzzer_state.armed, 0);
 	buzzer_led_start_flash();
-    uart_printf("Buzzer ARMED\n");
+    uart_console_printf("Buzzer ARMED\n");
 }
 
 ///////////////////////////////////////////////////////

@@ -11,7 +11,7 @@
 #include <bluetooth/services/nus.h>
 #include "conn_time_sync.h"
 #include <bluetooth/hci_vs_sdc.h>
-#include "uart_polling.h"
+#include "uart_console.h"
 #include "buzzer_control.h"
 
 #define LED_TOGGLE_PERIOD_MS 500
@@ -134,7 +134,7 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 	}
 
 	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-	uart_printf("Device found: %s (RSSI %d)\n", addr_str, rssi);
+	uart_console_printf("Device found: %s (RSSI %d)\n", addr_str, rssi);
 
 	if (bt_le_scan_stop()) {
 		return;
@@ -298,7 +298,7 @@ static bool on_vs_evt(struct net_buf_simple *buf)
 	bt_conn_unref(conn);
 	conn = NULL;
 
-	//uart_printf("%d\n", evt->event_counter);
+	//uart_console_printf("%d\n", evt->event_counter);
 
 	if (atomic_test_and_set_bit(&conn_state[conn_index].last_anchor_point_in_use, 0)) {
 		return true;

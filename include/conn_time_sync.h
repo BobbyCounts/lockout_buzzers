@@ -20,7 +20,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <zephyr/kernel.h>
-#include "uart_polling.h"
 
 /** @brief  Timed action service UUID */
 #define BT_UUID_TIMED_ACTION_SERVICE_VAL \

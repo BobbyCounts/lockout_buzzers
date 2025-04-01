@@ -22,6 +22,7 @@
 #include <soc.h>
 #include "conn_time_sync.h"
 #include "buzzer.h"
+#include "uart_console.h"
 
 static const nrfx_rtc_t app_rtc_instance = NRFX_RTC_INSTANCE(2);
 static const nrfx_timer_t app_timer_instance = NRFX_TIMER_INSTANCE(1);
@@ -169,7 +170,7 @@ int config_egu_trigger_on_rtc_and_timer_match(void)
 
 	ret = nrfx_egu_init(&egu_instance, 0, egu_isr_handler, NULL);
 	if (ret != NRFX_SUCCESS) {
-		uart_printf("Failed initializing egu\n");
+		uart_console_printf("Failed initializing egu\n");
 		return -ENODEV;
 	}
 	IRQ_CONNECT(NRFX_IRQ_NUMBER_GET(NRF_EGU_INST_GET(0)), 0,

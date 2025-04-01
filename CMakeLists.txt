@@ -9,7 +9,7 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(iso_time_sync)
 
 target_include_directories(app PRIVATE include)
-target_sources(app PRIVATE src/main.c src/timed_led_toggle.c src/uart_polling.c src/buzzer.c src/buzzer_control.c src/param_stack.c)
+target_sources(app PRIVATE src/main.c src/timed_led_toggle.c src/uart_console.c src/buzzer.c src/buzzer_control.c src/param_stack.c)
 
 if (CONFIG_BT_CENTRAL)
     target_sources(app PRIVATE src/central.c)

@@ -3,7 +3,7 @@
 #include <zephyr/drivers/gpio.h>
 #include "param_stack.h"
 #include "buzzer_control.h"
-#include "uart_polling.h"
+#include "uart_console.h"
 #include "buzzer_gatt.h"
 #include "conn_time_sync.h"
 
@@ -71,7 +71,7 @@ static void send_arm_packet(struct bt_conn *conn, void *data);
 
 static void on_send_buzzer_arm(struct k_work *work)
 {
-	uart_printf("Send ARM\n");
+	uart_console_printf("Send ARM\n");
 
 	controller_state.arm_timestamp = controller_time_us_get() + BUZZER_ARM_DELAY_US;
 	bt_conn_foreach(BT_CONN_TYPE_LE, send_arm_packet, &controller_state.arm_timestamp);
@@ -109,9 +109,9 @@ static void gpio_input_config(void)
 static void write_cb(struct bt_conn *conn, uint8_t err, struct bt_gatt_write_params *params)
 {
     if (err) {
-        uart_printf("GATT Write failed: %d\n", err);
+        uart_console_printf("GATT Write failed: %d\n", err);
     } else {
-        uart_printf("GATT Write successful\n");
+        uart_console_printf("GATT Write successful\n");
     } 
 	param_stack_free_write(params);
 }
@@ -139,7 +139,7 @@ static void send_arm_packet(struct bt_conn *conn, void *data)
 
 	struct bt_gatt_write_params *write_ptr;
 	if(param_stack_get_write(&write_ptr)){
-		uart_printf("Error getting write buffer\n");
+		uart_console_printf("Error getting write buffer\n");
 		return;
 	}
 	// Clear last buzz time before sending arm packet
@@ -186,7 +186,7 @@ static void send_light_packet(struct bt_conn *conn)
 
 	struct bt_gatt_write_params *write_ptr;
 	if(param_stack_get_write(&write_ptr)){
-		uart_printf("Error getting write buffer\n");
+		uart_console_printf("Error getting write buffer\n");
 		return;
 	}
 	device_state[conn_index].light_on = 1;
@@ -201,7 +201,7 @@ static void send_light_packet(struct bt_conn *conn)
 static void on_decide_winner(struct k_work *work)
 {
     // Get all recieved buzzer times and compare (find the lowest value)
-    uart_printf("Deciding winner\n");
+    uart_console_printf("Deciding winner\n");
 
 	int i;
 	uint64_t lowest_time = UINT64_MAX;
@@ -215,7 +215,7 @@ static void on_decide_winner(struct k_work *work)
 		}
 	}
 
-	uart_printf("Winner: %s\n", get_buzzer_name(&device_state[lowest_index].buzzer_addr->a));
+	uart_console_printf("Winner: %s\n", get_buzzer_name(&device_state[lowest_index].buzzer_addr->a));
 
     // Disarm buzzers
     controller_state.arm_timestamp = 0;
@@ -235,16 +235,16 @@ static uint8_t indicate_callback(struct bt_conn *conn, struct bt_gatt_subscribe_
 	uint8_t conn_index = bt_conn_index(conn);
 
 	if(conn == NULL){
-		uart_printf("Device is being unpaired\n");\
+		uart_console_printf("Device is being unpaired\n");\
 		return BT_GATT_ITER_STOP;
 	}
 	if(data == NULL){
-		uart_printf("Subscription was removed\n");
+		uart_console_printf("Subscription was removed\n");
 		return BT_GATT_ITER_STOP;
 	}
 
 	if (length != sizeof(device_state[conn_index].last_buzz_time)) {
-		uart_printf("Error: ARM Timestamp\n");
+		uart_console_printf("Error: ARM Timestamp\n");
 		return BT_GATT_ITER_CONTINUE;
 	}
 
@@ -252,14 +252,14 @@ static uint8_t indicate_callback(struct bt_conn *conn, struct bt_gatt_subscribe_
     // Check if this is the first buzzer to buzz in
     if(!atomic_test_bit(&controller_state.recievced_first_buzz, 0)){
         atomic_set_bit(&controller_state.recievced_first_buzz, 0);
-        uart_printf("First buzz\n");
+        uart_console_printf("First buzz\n");
         k_work_schedule(&decide_winner, K_MSEC(BUZZER_DECIDE_WINNER_DELAY));
     }
 	
 	memcpy(&device_state[conn_index].last_buzz_time, data, sizeof(device_state[conn_index].last_buzz_time));
 	atomic_set_bit(&device_state[conn_index].last_buzz_time_valid, 0);
 	
-	uart_printf("Got pressed time: %llu\n", device_state[conn_index].last_buzz_time);
+	uart_console_printf("Got pressed time: %llu\n", device_state[conn_index].last_buzz_time);
 
 	return BT_GATT_ITER_CONTINUE;
 }
@@ -279,14 +279,14 @@ static uint8_t on_discover_ccc(struct bt_conn *conn,
 	struct bt_gatt_discover_params *params)
 {
 	if (attr) {
-		// uart_printf("Found Pressed CCC\n");
+		// uart_console_printf("Found Pressed CCC\n");
 		subscribe_params.ccc_handle = attr->handle;
 
 		buzzer_subscribe(conn);
 
 		return BT_GATT_ITER_STOP;
 	} else {
-		uart_printf("CCC Done\n");
+		uart_console_printf("CCC Done\n");
 		return BT_GATT_ITER_STOP;
 	}
 	return BT_GATT_ITER_STOP;
@@ -300,15 +300,15 @@ static uint8_t on_discover_char(struct bt_conn *conn,
 	if (attr) {
 		struct bt_gatt_chrc *char_val = attr->user_data;
 		if(bt_uuid_cmp(char_val->uuid, BT_UUID_BUZZER_ARM_CHAR) == 0){
-			// uart_printf("Found Arm Characteristic\n");
+			// uart_console_printf("Found Arm Characteristic\n");
 			device_state[conn_index].buzzer_char_handle = bt_gatt_attr_value_handle(attr);
 		}
 		else if(bt_uuid_cmp(char_val->uuid, BT_UUID_TIMED_ACTION_CHAR) == 0){
-			// uart_printf("Found Time Characteristic\n");
+			// uart_console_printf("Found Time Characteristic\n");
 			*device_state[conn_index].timed_char_handle_ptr = bt_gatt_attr_value_handle(attr);
 		}
 		else if(bt_uuid_cmp(char_val->uuid, BT_UUID_BUZZER_PRESSED_CHAR) == 0){
-			// uart_printf("Found Pressed Characteristic\n");
+			// uart_console_printf("Found Pressed Characteristic\n");
 			device_state[conn_index].pressed_char_handle = bt_gatt_attr_value_handle(attr);
 			ccc_params.uuid = gatt_ccc_uuid;
 			ccc_params.start_handle = attr->handle + 2;
@@ -318,12 +318,12 @@ static uint8_t on_discover_char(struct bt_conn *conn,
 			bt_gatt_discover(conn, &ccc_params);
 		}
 		else if(bt_uuid_cmp(char_val->uuid, BT_UUID_BUZZER_LIGHT_CHAR) == 0){
-			// uart_printf("Found Light Characteristic\n");
+			// uart_console_printf("Found Light Characteristic\n");
 			device_state[conn_index].light_char_handle = bt_gatt_attr_value_handle(attr);
 		}
 		return BT_GATT_ITER_CONTINUE;
 	} else {
-		uart_printf("Discovery Done\n");
+		uart_console_printf("Discovery Done\n");
 		return BT_GATT_ITER_STOP;
 	}
 	return BT_GATT_ITER_STOP;
@@ -344,7 +344,7 @@ int get_buzzer_chars(struct bt_conn *conn, uint16_t *timed_handle)
 	device_state[conn_index].buzzer_addr = bt_conn_get_dst(conn);
 
 	// if(bt_addr_cmp(&device_state[conn_index].buzzer_addr->a, &buzzer_ids[0].buzzer_addr) == 0){
-	// 	uart_printf("Found buzzer: %s\n", buzzer_ids[0].buzzer_name);
+	// 	uart_console_printf("Found buzzer: %s\n", buzzer_ids[0].buzzer_name);
 	// }
 
 	return bt_gatt_discover(conn, &char_params);

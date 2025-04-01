@@ -1,0 +1,4 @@
+source "Kconfig.zephyr"
+
+config BUZZER_ROLE_MODE_CONTROLLER
+	bool "Act as the buzzer controller"

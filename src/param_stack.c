@@ -1,7 +1,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
 #include "zephyr/bluetooth/gatt.h"
-#include "uart_polling.h"
 
 #define MAX_ITEMS 50
 

@@ -9,34 +9,17 @@
 #include "conn_time_sync.h"
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/drivers/uart.h>
+#include "uart_console.h"
 
 int main(void)
 {
-	if(uart_poll_init()){
-		printk("ERROR: Could not init USB UART!\n");
-		return -1;
-	}
-
-	char role;
 	console_init();
 	
-	do {
-		uart_poll_print("Choose device role - type c (central) or p (peripheral): ");
-
-		while(uart_get_char(&role));
-
-		switch (role) {
-		case 'p':
-			uart_poll_print("\nPeripheral. Starting advertising\n");
-			peripheral_start();
-			break;
-		case 'c':
-			uart_poll_print("\nCentral. Starting scanning\n");
-			central_start();
-			break;
-		default:
-			uart_poll_print("\n");
-			break;
-		}
-	} while (role != 'c' && role != 'p');
+#ifdef CONFIG_BUZZER_ROLE_MODE_CONTROLLER
+	uart_console_printf("Configured as buzzer controller\n");
+	central_start();
+#else
+	uart_console_printf("Configured as buzzer\n");
+	peripheral_start();
+#endif
 }

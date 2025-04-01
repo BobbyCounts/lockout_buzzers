@@ -18,7 +18,6 @@
 #include <nrfx_gpiote.h>
 #include <helpers/nrfx_gppi.h>
 #include "conn_time_sync.h"
-#include "uart_polling.h"
 
 #define GPIOTE_INST NRF_DT_GPIOTE_INST(DT_ALIAS(led1), gpios)
 #define GPIOTE_NODE DT_NODELABEL(_CONCAT(gpiote, GPIOTE_INST))
