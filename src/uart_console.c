@@ -4,14 +4,17 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/sys/ring_buffer.h>
 #include <zephyr/init.h>
+#include <zephyr/kernel.h>
 
-#define MAX_PRINTF_SIZE 200
-#define UART_CONSOLE_TX_RING_BUF_SIZE 512
-#define UART_CONSOLE_RX_RING_BUF_SIZE 128
+#define MAX_PRINTF_SIZE 128
+#define RING_BUFFER_SIZE 512
+
 #define MIN(a, b) (((a) < (b)) ? (a) : (b))
 
-RING_BUF_DECLARE(tx_ring_buf, UART_CONSOLE_TX_RING_BUF_SIZE);
-RING_BUF_DECLARE(rx_ring_buf, UART_CONSOLE_RX_RING_BUF_SIZE);
+RING_BUF_DECLARE(rx_ring_buf, RING_BUFFER_SIZE);
+RING_BUF_DECLARE(tx_ring_buf, RING_BUFFER_SIZE);
+
+K_SEM_DEFINE(response_sem, 0, 1);
 
 static const struct device *const uart_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 
@@ -19,6 +22,9 @@ static void uart_console_irq_handler(const struct device *dev, void *user_data){
     ARG_UNUSED(user_data);
 
     while (uart_irq_update(dev) && uart_irq_is_pending(dev)){
+        printk("UART IRQ\n");
+
+        // Handle TX
         int empty_spaces = uart_irq_tx_ready(dev);
         if(empty_spaces > 0){
             char tx_buffer[128];
@@ -32,7 +38,18 @@ static void uart_console_irq_handler(const struct device *dev, void *user_data){
             int sent_bytes = uart_fifo_fill(dev, tx_buffer, bytes_from_ring_buf);
             if(sent_bytes != bytes_from_ring_buf){
                 printk("Dropped uart bytes\n");
-            }
+            }   
+        }
+        // Handle RX
+        int rx_bytes = uart_irq_rx_ready(dev);
+        if(rx_bytes > 0){
+            uint8_t *rx_buffer;
+            int buffer_size = ring_buf_put_claim(&rx_ring_buf, &rx_buffer, rx_bytes);
+            int bytes_read = uart_fifo_read(dev, rx_buffer, buffer_size);
+            ring_buf_put_finish(&rx_ring_buf, bytes_read);
+            printk("Read %d bytes\n", bytes_read);
+            printk("%d bytes in ring\n", ring_buf_size_get(&rx_ring_buf));
+            k_sem_give(&response_sem);
         }
     }
     return;
@@ -45,6 +62,7 @@ static int uart_console_init(void)
     }
 
     uart_irq_callback_user_data_set(uart_dev, uart_console_irq_handler, NULL);
+    uart_irq_rx_enable(uart_dev);
 
     printk("UART init complete\n");
     return 0;
@@ -53,14 +71,34 @@ static int uart_console_init(void)
 
 void uart_console_printf(char *fmt, ...)
 {
-    char formatted_string[MAX_PRINTF_SIZE];
+    uint8_t *tx_buffer;
+    int buffer_size = ring_buf_put_claim(&tx_ring_buf, &tx_buffer, MAX_PRINTF_SIZE);
     va_list argptr;
     va_start(argptr,fmt);
-    vsnprintf(formatted_string, sizeof(formatted_string), fmt, argptr);
+    int bytes_written = vsnprintf(tx_buffer, buffer_size, fmt, argptr);
     va_end(argptr);
+
+    // Check for error
+    if(bytes_written < 0){
+        // ERROR
+        ring_buf_put_finish(&tx_ring_buf, 0);
+        return;
+    }
+    ring_buf_put_finish(&tx_ring_buf, bytes_written);
     uart_irq_tx_enable(uart_dev);
-    // Send to the ring buffer
-    ring_buf_put(&tx_ring_buf, formatted_string, strlen(formatted_string));
+}
+
+void uart_console_command_loop(void)
+{
+    uart_console_printf("Ready for commands\n");
+    while(1){
+        k_sem_take(&response_sem, K_FOREVER);
+        while(!ring_buf_is_empty(&rx_ring_buf)){
+            char byte;
+            ring_buf_get(&rx_ring_buf, &byte, 1);
+            uart_console_printf("%c", byte);
+        }
+    }
 }
 
 SYS_INIT(uart_console_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);

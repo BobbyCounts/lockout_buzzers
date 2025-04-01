@@ -354,4 +354,6 @@ void central_start(void)
 
 	// Schedule event to toggle LED
 	k_work_schedule(&timestamp_send_work, K_MSEC(LED_TOGGLE_PERIOD_MS));
+
+	uart_console_command_loop();
 }
