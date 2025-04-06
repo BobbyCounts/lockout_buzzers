@@ -5,6 +5,7 @@
 #include <zephyr/sys/ring_buffer.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
+#include "buzzer_control.h"
 
 #define MAX_PRINTF_SIZE 128
 #define RING_BUFFER_SIZE 512
@@ -15,6 +16,7 @@ RING_BUF_DECLARE(rx_ring_buf, RING_BUFFER_SIZE);
 RING_BUF_DECLARE(tx_ring_buf, RING_BUFFER_SIZE);
 
 K_SEM_DEFINE(response_sem, 0, 1);
+K_MUTEX_DEFINE(printf_mutex);
 
 static const struct device *const uart_dev = DEVICE_DT_GET_ONE(zephyr_cdc_acm_uart);
 
@@ -71,21 +73,24 @@ static int uart_console_init(void)
 
 void uart_console_printf(char *fmt, ...)
 {
-    uint8_t *tx_buffer;
-    int buffer_size = ring_buf_put_claim(&tx_ring_buf, &tx_buffer, MAX_PRINTF_SIZE);
+    // Note: Can't really use ring buffer claim here because
+    // the ring buffer wraps cause only small buffers to be 
+    // available occasionally
+
+    // Aquire lock
+    k_mutex_lock(&printf_mutex, K_FOREVER);
+
+    char tx_buffer[MAX_PRINTF_SIZE];
     va_list argptr;
     va_start(argptr,fmt);
-    int bytes_written = vsnprintf(tx_buffer, buffer_size, fmt, argptr);
+    int bytes_written = vsnprintf(tx_buffer, MAX_PRINTF_SIZE, fmt, argptr);
     va_end(argptr);
 
-    // Check for error
-    if(bytes_written < 0){
-        // ERROR
-        ring_buf_put_finish(&tx_ring_buf, 0);
-        return;
-    }
-    ring_buf_put_finish(&tx_ring_buf, bytes_written);
+    ring_buf_put(&tx_ring_buf, tx_buffer, bytes_written);
     uart_irq_tx_enable(uart_dev);
+
+    // Release lock
+    k_mutex_unlock(&printf_mutex);
 }
 
 void uart_console_command_loop(void)
@@ -96,7 +101,19 @@ void uart_console_command_loop(void)
         while(!ring_buf_is_empty(&rx_ring_buf)){
             char byte;
             ring_buf_get(&rx_ring_buf, &byte, 1);
-            uart_console_printf("%c", byte);
+            switch(byte){
+            case 'a':
+                // ARM
+                controller_arm();
+                break;
+            case 'r':
+                // Reset
+                controller_reset();
+            case 'n':
+                // Next try rearm
+            default:
+                break;
+            }
         }
     }
 }

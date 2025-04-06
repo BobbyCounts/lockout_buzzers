@@ -75,7 +75,7 @@ static void send_arm_packet(struct bt_conn *conn, void *data);
 
 static void on_send_buzzer_arm(struct k_work *work)
 {
-	uart_console_printf("Send ARM\n");
+	printk("Send ARM\n");
 
 	controller_state.arm_timestamp = controller_time_us_get() + BUZZER_ARM_DELAY_US;
 	bt_conn_foreach(BT_CONN_TYPE_LE, send_arm_packet, &controller_state.arm_timestamp);
@@ -98,6 +98,25 @@ static void controller_arm_button_isr(const struct device *dev, struct gpio_call
 	k_work_submit(&send_arm_signal);
 }
 
+static void controller_disarm_buzzers(void)
+{
+    // Disarm buzzers
+    controller_state.arm_timestamp = 0;
+    atomic_clear_bit(&controller_state.recievced_first_buzz, 0);
+	bt_conn_foreach(BT_CONN_TYPE_LE, send_arm_packet, &controller_state.arm_timestamp);	
+}
+
+// External functions
+void controller_arm(void)
+{
+	k_work_submit(&send_arm_signal);
+}
+
+void controller_reset(void)
+{
+	controller_disarm_buzzers();
+}
+
 // Configure the input button
 static void gpio_input_config(void)
 {
@@ -113,9 +132,9 @@ static void gpio_input_config(void)
 static void write_cb(struct bt_conn *conn, uint8_t err, struct bt_gatt_write_params *params)
 {
     if (err) {
-        uart_console_printf("GATT Write failed: %d\n", err);
+        printk("GATT Write failed: %d\n", err);
     } else {
-        uart_console_printf("GATT Write successful\n");
+        printk("GATT Write successful\n");
     } 
 	param_stack_free_write(params);
 }
@@ -205,7 +224,7 @@ static void send_light_packet(struct bt_conn *conn)
 static void on_decide_winner(struct k_work *work)
 {
     // Get all recieved buzzer times and compare (find the lowest value)
-    uart_console_printf("Deciding winner\n");
+    uart_console_printf("Deciding winner\n");	
 
 	int i;
 	uint64_t lowest_time = UINT64_MAX;
@@ -219,12 +238,10 @@ static void on_decide_winner(struct k_work *work)
 		}
 	}
 
-	uart_console_printf("Winner: %s\n", get_buzzer_name(&device_state[lowest_index].buzzer_addr->a));
-
     // Disarm buzzers
-    controller_state.arm_timestamp = 0;
-    atomic_clear_bit(&controller_state.recievced_first_buzz, 0);
-	bt_conn_foreach(BT_CONN_TYPE_LE, send_arm_packet, &controller_state.arm_timestamp);
+	controller_disarm_buzzers();
+
+	uart_console_printf("Winner: %s\n", get_buzzer_name(&device_state[lowest_index].buzzer_addr->a));
 
 	// Turn on the light for the winner
 	struct bt_conn *conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, device_state[lowest_index].buzzer_addr);
@@ -250,6 +267,11 @@ static uint8_t indicate_callback(struct bt_conn *conn, struct bt_gatt_subscribe_
 	if (length != sizeof(device_state[conn_index].last_buzz_time)) {
 		uart_console_printf("Error: ARM Timestamp\n");
 		return BT_GATT_ITER_CONTINUE;
+	}
+
+	// Ignore if controller has transitioned to disarmed state
+	if(controller_state.arm_timestamp == 0){
+		return BT_GATT_ITER_CONTINUE;	
 	}
 
     // Data is a valid buzz
