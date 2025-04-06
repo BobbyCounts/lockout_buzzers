@@ -43,15 +43,19 @@ static const struct bt_uuid *gatt_ccc_uuid = BT_UUID_GATT_CCC;
 const struct device_ids buzzer_ids[] = {
 	{
 		.buzzer_addr = {{0xEE, 0xA1, 0x46, 0x6F, 0x1B, 0xCA}},
-		.buzzer_name = "Buzzer 1"
+		.buzzer_name = "Green"
 	},
 	{
 		.buzzer_addr = {{0x6B, 0x65, 0xF0, 0x32, 0xB1, 0xD7}},
 		.buzzer_name = "Red"
 	},
 	{
-		.buzzer_addr = {{0}},
-		.buzzer_name = "Buzzer 3"
+		.buzzer_addr = {{0x4D, 0x2E, 0x9C, 0x2F, 0xE3, 0xD9}},
+		.buzzer_name = "Yellow"
+	},
+	{
+		.buzzer_addr = {{0xD2, 0xB4, 0xB2, 0xFE, 0x6F, 0xDF}},
+		.buzzer_name = "Blue"
 	}
 };
 

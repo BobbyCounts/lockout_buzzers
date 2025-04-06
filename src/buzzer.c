@@ -7,7 +7,7 @@
 #include "param_stack.h"
 #include "buzzer_gatt.h"
 
-#define BUZZER_LOCKOUT 1000
+#define BUZZER_LOCKOUT 2000
 #define BUZZER_LED_FLASH_DELAY_MS 100
 
 // Data structure definitions
@@ -108,6 +108,8 @@ void buzzer_device_reset(void)
 
     buzzer_timing.offset_to_central = 0;
     atomic_clear_bit(&buzzer_timing.offset_valid, 0);
+
+	buzzer_led_off();
 }
 
 
