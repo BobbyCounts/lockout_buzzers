@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <ctype.h>
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/sys/ring_buffer.h>
@@ -101,7 +102,7 @@ void uart_console_command_loop(void)
         while(!ring_buf_is_empty(&rx_ring_buf)){
             char byte;
             ring_buf_get(&rx_ring_buf, &byte, 1);
-            switch(byte){
+            switch(tolower(byte)){
             case 'a':
                 // ARM
                 controller_arm();
@@ -109,8 +110,6 @@ void uart_console_command_loop(void)
             case 'r':
                 // Reset
                 controller_reset();
-            case 'n':
-                // Next try rearm
             default:
                 break;
             }
