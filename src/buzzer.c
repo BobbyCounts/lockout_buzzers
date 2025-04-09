@@ -8,7 +8,7 @@
 #include "buzzer_gatt.h"
 
 #define BUZZER_LOCKOUT 2000
-#define BUZZER_LED_FLASH_DELAY_MS 100
+#define BUZZER_LED_FLASH_DELAY_MS 200
 
 // Data structure definitions
 // Buzzer state struct
