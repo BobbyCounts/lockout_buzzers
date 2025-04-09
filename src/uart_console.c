@@ -78,7 +78,7 @@ void uart_console_printf(char *fmt, ...)
     // available occasionally
 
     // Aquire lock
-    k_mutex_lock(&printf_mutex, K_FOREVER);
+    // k_mutex_lock(&printf_mutex, K_FOREVER);
 
     char tx_buffer[MAX_PRINTF_SIZE];
     va_list argptr;
@@ -90,7 +90,7 @@ void uart_console_printf(char *fmt, ...)
     uart_irq_tx_enable(uart_dev);
 
     // Release lock
-    k_mutex_unlock(&printf_mutex);
+    // k_mutex_unlock(&printf_mutex);
 }
 
 void uart_console_command_loop(void)
