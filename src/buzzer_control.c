@@ -10,13 +10,18 @@
 #define BUZZER_ARM_DELAY_US 120000
 
 // Time to wait for buzzes before deciding the winner in ms
-#define BUZZER_DECIDE_WINNER_DELAY 120
+#define BUZZER_DECIDE_WINNER_DELAY 200
 
 // Data structure definitions
 struct controller_params {
 	uint64_t arm_timestamp;
     atomic_t recievced_first_buzz;
 	atomic_t lock;
+};
+
+struct disabled_buzzers {
+	bt_addr_t buzzer_addr[CONFIG_BT_MAX_CONN];
+	int num_buzzers;
 };
 
 struct device_params {
@@ -65,6 +70,7 @@ static struct bt_gatt_subscribe_params subscribe_params;
 static struct bt_gatt_discover_params char_params;
 static struct bt_gatt_discover_params ccc_params;
 static struct device_params device_state[CONFIG_BT_MAX_CONN];
+static struct disabled_buzzers disabled_buzzers;
 
 // Callback data for gpio
 static struct gpio_callback pin_cb_data;
@@ -72,6 +78,7 @@ static struct gpio_callback pin_cb_data;
 // Function declarations
 static void gpio_input_config(void);
 static void send_arm_packet(struct bt_conn *conn, void *data);
+static void send_light_packet(struct bt_conn *conn, int light_setting);
 
 static void on_send_buzzer_arm(struct k_work *work)
 {
@@ -90,6 +97,7 @@ void buzzer_controller_init(void)
     controller_state.arm_timestamp = 0;
     atomic_clear_bit(&controller_state.lock, 0);
     atomic_clear_bit(&controller_state.recievced_first_buzz, 0);
+	disabled_buzzers.num_buzzers = 0;
 }
 
 static void controller_arm_button_isr(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
@@ -98,6 +106,7 @@ static void controller_arm_button_isr(const struct device *dev, struct gpio_call
 	k_work_submit(&send_arm_signal);
 }
 
+// Function that should be called for every buzzer disarm
 static void controller_disarm_buzzers(void)
 {
     // Disarm buzzers
@@ -114,6 +123,7 @@ void controller_arm(void)
 
 void controller_reset(void)
 {
+	disabled_buzzers.num_buzzers = 0;
 	controller_disarm_buzzers();
 }
 
@@ -160,6 +170,27 @@ static void send_arm_packet(struct bt_conn *conn, void *data)
 		return;
 	}
 
+	// Get connection address
+	const bt_addr_le_t *buzzer_addr = bt_conn_get_dst(conn);
+	// Null Check
+	if(!buzzer_addr){
+		printk("NULL connection pointer\n");
+		return;
+	}
+	// Clear the light of the last disabled buzzer if any
+	if(disabled_buzzers.num_buzzers){
+		int last_disabled_idx = disabled_buzzers.num_buzzers - 1; 
+		if(bt_addr_cmp(&disabled_buzzers.buzzer_addr[last_disabled_idx], &buzzer_addr->a) == 0){
+			send_light_packet(conn, 0);
+		}	
+	}
+	// Don't send the arming signal if the buzzer has been disabled
+	int i;
+	for(i = 0; i < disabled_buzzers.num_buzzers; i++){
+		if(bt_addr_cmp(&disabled_buzzers.buzzer_addr[i], &buzzer_addr->a) == 0){
+			return;
+		}
+	}
 	struct bt_gatt_write_params *write_ptr;
 	if(param_stack_get_write(&write_ptr)){
 		uart_console_printf("Error getting write buffer\n");
@@ -186,7 +217,7 @@ static const char *get_buzzer_name(const bt_addr_t *addr)
 	return "Unknown";
 }
 
-static void send_light_packet(struct bt_conn *conn)
+static void send_light_packet(struct bt_conn *conn, int light_setting)
 {
 	int err;
 	struct bt_conn_info conn_info;
@@ -212,7 +243,13 @@ static void send_light_packet(struct bt_conn *conn)
 		uart_console_printf("Error getting write buffer\n");
 		return;
 	}
-	device_state[conn_index].light_on = 1;
+
+	if(light_setting){
+		device_state[conn_index].light_on = 1;
+	}else{
+		device_state[conn_index].light_on = 0;
+	}
+
 	write_ptr->handle = device_state[conn_index].light_char_handle;
 	write_ptr->data = &device_state[conn_index].light_on;
 	write_ptr->length = sizeof(uint8_t);
@@ -243,9 +280,13 @@ static void on_decide_winner(struct k_work *work)
 
 	uart_console_printf("Winner: %s\n", get_buzzer_name(&device_state[lowest_index].buzzer_addr->a));
 
+	// Add the winning buzzer to the disabled list for if the next buzzer command is issued
+	bt_addr_copy(&disabled_buzzers.buzzer_addr[disabled_buzzers.num_buzzers], &device_state[lowest_index].buzzer_addr->a);
+	disabled_buzzers.num_buzzers += 1;
+
 	// Turn on the light for the winner
 	struct bt_conn *conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, device_state[lowest_index].buzzer_addr);
-	send_light_packet(conn);
+	send_light_packet(conn, 1);
 	bt_conn_unref(conn);
     return;
 }
@@ -285,7 +326,8 @@ static uint8_t indicate_callback(struct bt_conn *conn, struct bt_gatt_subscribe_
 	memcpy(&device_state[conn_index].last_buzz_time, data, sizeof(device_state[conn_index].last_buzz_time));
 	atomic_set_bit(&device_state[conn_index].last_buzz_time_valid, 0);
 	
-	uart_console_printf("Got pressed time: %llu\n", device_state[conn_index].last_buzz_time);
+	const bt_addr_le_t *buzzer_addr = bt_conn_get_dst(conn);
+	uart_console_printf("%s buzzed in @ %llu\n", get_buzzer_name(&buzzer_addr->a), device_state[conn_index].last_buzz_time);
 
 	return BT_GATT_ITER_CONTINUE;
 }
